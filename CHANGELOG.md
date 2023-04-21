@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Editor
+  - Fix edn tree to consider symbols. #1556
+  - Fix edn tree to consider vector root nodes. #1557
+
 ## 2023.04.19-12.43.29
 
 - General
