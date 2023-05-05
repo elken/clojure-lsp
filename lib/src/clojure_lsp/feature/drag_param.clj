@@ -15,16 +15,12 @@
 (def ^:private param-establishing-symbols
   '#{defn defn- defmacro})
 
-(defn z-safe-sexpr [zloc]
-  (when (z/sexpr-able? zloc)
-    (z/sexpr zloc)))
-
 (defn ^:private plan [zloc dir uri db]
   (let [vec-zloc (z/up zloc)]
     ;; exclude maps, sets, lists, calls, etc
     (when (z/vector? vec-zloc)
       ;; exclude non-param vectors and multi-arity functions
-      (when (some-> vec-zloc z/leftmost z-safe-sexpr param-establishing-symbols)
+      (when (some-> vec-zloc z/leftmost parser/safe-zloc-sexpr param-establishing-symbols)
         (let [zloc (edit/mark-position zloc ::orig)]
           ;; exclude vararg, both from dragging and from pulp clauses
           (when-let [zloc (if-let [vararg-marker-loc (some-> zloc
@@ -32,8 +28,8 @@
                                                              (z/find-value '&))]
                             (-> vararg-marker-loc
                                 paredit/kill ;; remove to right of &
-                                z/remove ;; remove &
-                                z/leftmost ;; start returning to original node
+                                z/remove     ;; remove &
+                                z/leftmost   ;; start returning to original node
                                 (z/find z/right* #(edit/marked? % ::orig)))
                             zloc)]
             (f.drag/plan zloc dir uri db)))))))
@@ -45,7 +41,7 @@
              (or (f.clauses/z-leftmost? var-usage-loc)
                  (let [left-loc (f.clauses/z-left var-usage-loc)] ;; except for `(partial f ...)` which we can sometimes handle.
                    (and (f.clauses/z-leftmost? left-loc)
-                        (= 'partial (z-safe-sexpr left-loc))))))
+                        (= 'partial (parser/safe-zloc-sexpr left-loc))))))
       (let [arg-loc (->> (f.clauses/z-right var-usage-loc)
                          (iterate f.clauses/z-right)
                          (take-while identity)

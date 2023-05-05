@@ -2,8 +2,7 @@
   (:require
    [clojure-lsp.parser :as parser]
    [clojure-lsp.queries :as q]
-   [clojure-lsp.shared :as shared]
-   [rewrite-clj.zip :as z]))
+   [clojure-lsp.shared :as shared]))
 
 (set! *warn-on-reflection* true)
 
@@ -66,18 +65,29 @@
     (->> m
          (reduce
            (fn [acc entry]
-             (if (map? entry)
+             (cond
+               (map? entry)
                (concat acc (edn->element-tree entry keyword-elements symbol-elements))
-               (let [[k v] entry
-                     element (if (keyword? k)
-                               (first (filter #(= (:name %) (name k)) keyword-elements))
-                               (first (filter #(= (:symbol %) k) symbol-elements)))
+
+               (or (not (coll? entry))
+                   (< (count entry) 2))
+               acc
+
+               :else
+               (let [[k v] (vec entry)
+                     element (or (if (keyword? k)
+                                   (first (filter #(= (:name %) (name k)) keyword-elements))
+                                   (first (filter #(= (:symbol %) k) symbol-elements)))
+                                 ;; fallback to dumb element
+                                 {:symbol (or (some-> k str) "nil") :row 0 :col 0 :end-row 0 :end-col 0})
                      document-symbol (element->document-symbol element)
                      kind (cond
                             (string? v) :string
                             (keyword? v) :field
                             (boolean? v) :boolean
+                            (number? v) :number
                             (vector? v) :array
+                            (list? v) :array
                             (set? v) :array
                             :else :struct)
                      document-symbol (assoc document-symbol :kind kind)]
@@ -111,10 +121,13 @@
 
 (defn document-symbols [db uri]
   (if (identical? :edn (shared/uri->file-type uri))
-    (-> (parser/zloc-of-file db uri)
-        z/sexpr
-        (edn->element-tree (get-in db [:analysis uri :keyword-usages])
-                           (get-in db [:analysis uri :symbols])))
+    (try
+      (some-> (parser/safe-zloc-of-file db uri)
+              parser/safe-zloc-sexpr
+              (edn->element-tree (get-in db [:analysis uri :keyword-usages])
+                                 (get-in db [:analysis uri :symbols])))
+      (catch Exception e
+        (println e)))
     (when-let [namespace-definition (q/find-namespace-definition-by-uri db uri)]
       [{:name (or (some-> namespace-definition :name name)
                   ;; TODO Consider using URI for display purposes, especially if
